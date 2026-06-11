@@ -19,7 +19,7 @@ class GameServer:
         # Listas de controle de conexões
         self.clients = []
         self.players_info = [] # Guarda os dados de quem está na sala
-        
+
     def broadcast(self, data: dict):
         """Envia uma mensagem JSON para TODOS os clientes conectados."""
         msg_json = json.dumps(data)
@@ -86,12 +86,15 @@ class GameServer:
         print(f"[DESCONEXÃO] {addr} saiu.")
 
     def start(self):
-        self.server.listen()
+        self.socket.listen()
         print(f"[INICIADO] Servidor CodeQuest rodando em {SERVER_IP}:{PORT}")
         
         while True:
-            conn, addr = self.server.accept()
+            # Alterado de self.server.accept() para self.socket.accept()
+            conn, addr = self.socket.accept()
             self.clients.append(conn)
+            
+            # Cria uma thread para cuidar desse jogador específico
             thread = threading.Thread(target=self.handle_client, args=(conn, addr))
             thread.start()
 
