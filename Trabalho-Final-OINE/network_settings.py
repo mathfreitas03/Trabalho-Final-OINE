@@ -1,6 +1,6 @@
 import socket
 
-PORT = 5050
+PORT = 9999
 
 # Descobre o IP local da máquina dinamicamente
 try:
