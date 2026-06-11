@@ -15,7 +15,6 @@ class GameServer:
         self.server.bind(("0.0.0.0", PORT)) # <--- ADICIONE ESTA LINHA
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # "" diz ao Windows para aceitar conexões vindas de QUALQUER IP local
-        self.socket.bind(("", PORT))
         self.clients = []
         self.players_info = [] # Guarda os dados de quem está na sala
 

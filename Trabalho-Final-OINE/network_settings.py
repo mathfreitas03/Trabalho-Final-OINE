@@ -1,8 +1,7 @@
 import socket
 
-PORT = 5050
+PORT = 9090
 
-# Descobre o IP local da máquina dinamicamente
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80)) # Conexão temporária para puxar a interface ativa
