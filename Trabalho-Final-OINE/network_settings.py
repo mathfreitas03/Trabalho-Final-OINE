@@ -1,11 +1,15 @@
-# network_settings.py
 import socket
 
-# Configurações globais do TCP
 PORT = 5050
 
-# Pega o IP local da máquina automaticamente (Essencial para o host LAN)
-SERVER_IP = "10.90.33.143"
+# Descobre o IP local da máquina dinamicamente
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80)) # Conexão temporária para puxar a interface ativa
+    SERVER_IP = s.getsockname()[0]
+    s.close()
+except Exception:
+    SERVER_IP = "127.0.0.1" # Fallback caso offline
 
 ADDR = (SERVER_IP, PORT)
 FORMAT = 'utf-8'
