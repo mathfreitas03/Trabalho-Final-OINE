@@ -1,0 +1,11 @@
+WIDTH = 1200
+HEIGHT = 800
+FPS = 60
+TITLE = "CodeQuest - Trabalho Final OINE"
+
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+DARK_GREY = (40, 40, 40)
+LIGHT_GREY = (100, 100, 100)
+BLUE = (50, 100, 200)
+HOVER_BLUE = (70, 130, 230)
