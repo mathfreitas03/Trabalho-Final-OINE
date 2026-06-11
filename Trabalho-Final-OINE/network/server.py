@@ -11,8 +11,8 @@ from network_settings import PORT, SERVER_IP, ADDR, FORMAT, BUFFER_SIZE
 
 class GameServer:
     def __init__(self):
-        # self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # self.server.bind(("0.0.0.0", PORT)) # <--- ADICIONE ESTA LINHA
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind(("0.0.0.0", PORT)) # <--- ADICIONE ESTA LINHA
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # "" diz ao Windows para aceitar conexões vindas de QUALQUER IP local
         self.socket.bind(("", PORT))
