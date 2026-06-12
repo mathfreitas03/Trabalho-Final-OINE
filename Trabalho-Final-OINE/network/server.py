@@ -11,10 +11,11 @@ from network_settings import PORT, SERVER_IP, ADDR, FORMAT, BUFFER_SIZE
 
 class GameServer:
     def __init__(self):
-        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.bind(("0.0.0.0", PORT)) # <--- ADICIONE ESTA LINHA
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # "" diz ao Windows para aceitar conexões vindas de QUALQUER IP local
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Diz ao Windows para aceitar conexões vindas de QUALQUER IP local nesta porta
+        self.socket.bind(("", PORT)) 
+        # Listas de controle de conexões
         self.clients = []
         self.players_info = [] # Guarda os dados de quem está na sala
 
@@ -84,12 +85,15 @@ class GameServer:
         print(f"[DESCONEXÃO] {addr} saiu.")
 
     def start(self):
-        self.server.listen()
+        self.socket.listen()
         print(f"[INICIADO] Servidor CodeQuest rodando em {SERVER_IP}:{PORT}")
         
         while True:
-            conn, addr = self.server.accept()
+            # Alterado de self.server.accept() para self.socket.accept()
+            conn, addr = self.socket.accept()
             self.clients.append(conn)
+            
+            # Cria uma thread para cuidar desse jogador específico
             thread = threading.Thread(target=self.handle_client, args=(conn, addr))
             thread.start()
 
