@@ -46,8 +46,10 @@ class Game:
         
         try:
             self.bg_menu = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "menu_bg.png")).convert(), (WIDTH, HEIGHT))
-            self.logo_image = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "logo.png")).convert_alpha(), (400, 150))
-            self.logo_rect = self.logo_image.get_rect(center=(WIDTH // 2, 120))
+            # LOGO AUMENTADA PARA 600x225
+            self.logo_image = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "logo.png")).convert_alpha(), (600, 325))
+            # LOGO DESCIDA LEVEMENTE PARA O Y=180 PARA COMPENSAR O NOVO TAMANHO
+            self.logo_rect = self.logo_image.get_rect(center=(WIDTH // 2, 180))
         except FileNotFoundError:
             self.bg_menu = None
             self.logo_image = None
@@ -71,11 +73,18 @@ class Game:
             self.img_healer = self.create_fallback_image(portrait_size, (0, 200, 0)) 
             self.img_bard = self.create_fallback_image(portrait_size, (200, 200, 0)) 
 
+        # Cenários de Batalha (Múltiplos)
         try:
-            self.bg_battle = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "battle_bg.png")).convert(), (WIDTH, HEIGHT))
+            self.bg_battle_1 = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "battle_bg.png")).convert(), (WIDTH, HEIGHT))
         except FileNotFoundError:
-            self.bg_battle = None
+            self.bg_battle_1 = None
             
+        try:
+            self.bg_battle_2 = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "battle_bg2.png")).convert(), (WIDTH, HEIGHT))
+        except FileNotFoundError:
+            self.bg_battle_2 = None
+            
+        # Sprites dos Inimigos
         try:
             self.img_dragon = pygame.transform.scale(pygame.image.load(os.path.join(assets_path, "boss_dragon.png")).convert_alpha(), (350, 350))
         except FileNotFoundError:
@@ -89,8 +98,9 @@ class Game:
         # --- BOTÕES E UI (MENU E LOBBY) ---
         center_x = (WIDTH // 2)
         
-        self.btn_host = Button(center_x - 150, 280, 300, 60, "Criar Partida (Host)", BLUE, HOVER_BLUE, WHITE)
-        self.btn_join = Button(center_x - 150, 370, 300, 60, "Entrar em Partida", BLUE, HOVER_BLUE, WHITE)
+        # BOTÕES DESCIDOS PARA O Y=400 e Y=490 PARA DAR ESPAÇO À NOVA LOGO
+        self.btn_host = Button(center_x - 150, 400, 300, 60, "Criar Partida (Host)", BLUE, HOVER_BLUE,"#FFFF00")
+        self.btn_join = Button(center_x - 150, 490, 300, 60, "Entrar em Partida", BLUE, HOVER_BLUE, WHITE)
 
         portrait_y = 450 
         spacing = 180 
@@ -134,18 +144,17 @@ class Game:
         self.team = [] 
         self.current_turn_idx = -1 
         
-        self.battle_substate = "ACTION_SELECT" 
+        self.battle_substate = "WAITING_OTHER" 
         self.current_action = None 
         self.battle_message = "" 
         
         self.levels = [
-            {"fase": "Pilha", "nome": "Dragão da Pilha", "img": self.img_dragon, "hp": 400},
-            {"fase": "Fila", "nome": "Golem da Fila", "img": self.img_golem, "hp": 500}
+            {"fase": "Pilha", "nome": "Dragão da Pilha", "img": self.img_dragon, "hp": 400, "bg": self.bg_battle_1},
+            {"fase": "Fila", "nome": "Golem da Fila", "img": self.img_golem, "hp": 500, "bg": self.bg_battle_2} 
         ]
-        self.current_level_idx = 0
         
-        self.load_level()
-
+        self.current_level_idx = 1 
+        
     def load_level(self):
         level_data = self.levels[self.current_level_idx]
         
@@ -154,11 +163,11 @@ class Game:
         self.img_boss = level_data["img"]
         self.boss_max_hp = level_data["hp"]
         self.boss_hp = self.boss_max_hp
+        self.current_bg = level_data["bg"] 
         
         self.player_hp = self.player_max_hp 
         self.player_mp = self.player_max_mp 
         
-        # Gera o time completo para o combate
         self.team = []
         players_list = self.connected_players if self.connected_players else [{"name": self.player_name, "class": self.player_class}]
         for p in players_list:
@@ -170,9 +179,17 @@ class Game:
             })
             
         self.current_turn_idx = -1
-        self.start_next_turn()
         
+        if self.player_name != "":
+            if self.is_host:
+                self.start_next_turn()
+            else:
+                self.battle_substate = "WAITING_OTHER"
+
     def start_next_turn(self):
+        if not self.is_host: 
+            return
+            
         self.current_turn_idx += 1
         
         while self.current_turn_idx < len(self.team) and self.team[self.current_turn_idx]["hp"] <= 0:
@@ -181,16 +198,22 @@ class Game:
         if self.current_turn_idx >= len(self.team):
             if self.boss_hp > 0:
                 self.execute_boss_turn()
-                if self.state == "BATTLE":
-                    self.battle_substate = "BOSS_TURN"
         else:
-            current_player = self.team[self.current_turn_idx]
-            
-            if current_player["name"] == self.player_name:
-                self.player_mp = min(self.player_max_mp, self.player_mp + 10) 
-                self.battle_substate = "ACTION_SELECT"
-            else:
-                self.battle_substate = "WAITING_OTHER"
+            self.client.send_data({
+                "type": "set_turn",
+                "turn_idx": self.current_turn_idx
+            })
+            self.apply_turn(self.current_turn_idx)
+
+    def apply_turn(self, turn_idx):
+        self.current_turn_idx = turn_idx
+        current_player = self.team[self.current_turn_idx]
+        
+        if current_player["name"] == self.player_name:
+            self.player_mp = min(self.player_max_mp, self.player_mp + 10) 
+            self.battle_substate = "ACTION_SELECT"
+        else:
+            self.battle_substate = "WAITING_OTHER"
 
     def carregar_nova_pergunta(self):
         self.active_question = get_random_question(self.fase_atual)
@@ -213,7 +236,7 @@ class Game:
     def execute_player_action(self):
         if self.current_action == "Attack":
             self.boss_hp -= 50
-            self.battle_message = "Resposta Correta! Seu ataque causou 50 de dano."
+            self.battle_message = f"{self.player_name} atacou o {self.boss_name} com sucesso!"
             
         elif self.current_action == "Skill":
             self.player_mp -= 20
@@ -221,18 +244,26 @@ class Game:
             if self.player_class == "Healer":
                 cura = 60
                 self.player_hp = min(self.player_max_hp, self.player_hp + cura)
-                self.battle_message = f"Poder direto! Você usou Luz Divina e curou {cura} HP."
+                self.battle_message = f"{self.player_name} usou Luz Divina!"
             elif self.player_class == "Bard":
                 self.boss_hp -= 30
                 self.player_hp = min(self.player_max_hp, self.player_hp + 30)
-                self.battle_message = f"Poder direto! Sua Canção causou 30 de dano e curou 30 HP."
+                self.battle_message = f"{self.player_name} tocou uma Canção e causou dano!"
             else:
                 self.boss_hp -= 120
-                self.battle_message = f"Poder direto! Sua Habilidade Especial causou 120 de dano!"
+                self.battle_message = f"{self.player_name} causou dano massivo de Habilidade!"
                 
         for p in self.team:
             if p["name"] == self.player_name:
                 p["hp"] = self.player_hp
+
+        self.client.send_data({
+            "type": "action_result",
+            "player_name": self.player_name,
+            "boss_hp": self.boss_hp,
+            "player_hp": self.player_hp,
+            "message": self.battle_message
+        })
 
     def processar_resposta(self, opcao_escolhida):
         if self.active_question:
@@ -241,7 +272,14 @@ class Game:
             if opcao_escolhida == correta:
                 self.execute_player_action()
             else:
-                self.battle_message = "Resposta incorreta! Seu ataque falhou."
+                self.battle_message = f"{self.player_name} errou a lógica e falhou o ataque!"
+                self.client.send_data({
+                    "type": "action_result",
+                    "player_name": self.player_name,
+                    "boss_hp": self.boss_hp,
+                    "player_hp": self.player_hp,
+                    "message": self.battle_message
+                })
                     
             self.verificar_fim_de_jogo()
             
@@ -249,6 +287,9 @@ class Game:
                 self.battle_substate = "TURN_RESULT"
 
     def execute_boss_turn(self):
+        if not self.is_host:
+            return
+
         jogadores_vivos = [p for p in self.team if p["hp"] > 0]
         
         if not jogadores_vivos:
@@ -259,19 +300,35 @@ class Game:
         
         if jogadores_em_perigo:
             alvo = min(jogadores_em_perigo, key=lambda x: x["hp"])
-            motivo = " (Foco no elo fraco!)"
+            motivo = " (Foco no alvo ferido!)"
         else:
             alvo = random.choice(jogadores_vivos)
             motivo = ""
 
         acao_boss = random.choices(["Attack", "Special"], weights=[70, 30], k=1)[0]
         
-        if acao_boss == "Attack":
-            dano = 20
-            ataque_texto = "atacou"
+        if self.boss_name == "Dragão da Pilha":
+            if acao_boss == "Attack":
+                dano = 20
+                self.battle_message = f"O Dragão cuspiu fogo em {alvo['name']}! {dano} de dano{motivo}"
+            else:
+                dano = 45
+                self.battle_message = f"CUIDADO! O Dragão usou Sopro Infernal em {alvo['name']}! {dano} de dano{motivo}"
+                
+        elif self.boss_name == "Golem da Fila":
+            if acao_boss == "Attack":
+                dano = 30 
+                self.battle_message = f"O Golem atirou uma rocha em {alvo['name']}! {dano} de dano{motivo}"
+            else:
+                dano = 55
+                self.battle_message = f"CUIDADO! O Golem causou um Terremoto e atingiu {alvo['name']}! {dano} de dano{motivo}"
         else:
-            dano = 45
-            ataque_texto = "usou Especial em"
+            if acao_boss == "Attack":
+                dano = 20
+                self.battle_message = f"O Boss atacou {alvo['name']}! {dano} de dano{motivo}"
+            else:
+                dano = 45
+                self.battle_message = f"O Boss usou Especial em {alvo['name']}! {dano} de dano{motivo}"
             
         alvo["hp"] -= dano
         if alvo["hp"] < 0: alvo["hp"] = 0
@@ -279,13 +336,19 @@ class Game:
         if alvo["name"] == self.player_name:
             self.player_hp = alvo["hp"]
             
-        self.battle_message = f"O Boss {ataque_texto} {alvo['name']}! {dano} de dano{motivo}"
+        self.client.send_data({
+            "type": "boss_action",
+            "target_name": alvo["name"],
+            "target_hp": alvo["hp"],
+            "message": self.battle_message
+        })
             
         self.verificar_fim_de_jogo()
+        if self.state == "BATTLE":
+            self.battle_substate = "BOSS_TURN"
 
     def reset_game(self):
-        self.current_level_idx = 0
-        self.load_level()
+        self.current_level_idx = 0 
         self.state = "MENU"
 
     def create_fallback_image(self, size, color):
@@ -350,7 +413,6 @@ class Game:
             elif self.state == "WAITING_ROOM":
                 if self.is_host and self.btn_start_game.is_clicked(event):
                     self.client.send_data({"type": "start_game"})
-                    self.state = "BATTLE" 
 
             elif self.state == "BATTLE":
                 if self.battle_substate == "ACTION_SELECT":
@@ -376,11 +438,14 @@ class Game:
                     elif self.btn_opt_d.is_clicked(event): self.processar_resposta(3)
 
                 elif self.battle_substate == "TURN_RESULT":
-                    if self.btn_continue.is_clicked(event):
-                        self.start_next_turn()
+                    current_player = self.team[self.current_turn_idx]
+                    if current_player["name"] == self.player_name:
+                        if self.btn_continue.is_clicked(event):
+                            self.client.send_data({"type": "turn_ended"})
+                            self.battle_substate = "WAITING_OTHER"
 
                 elif self.battle_substate == "BOSS_TURN":
-                    if self.btn_continue.is_clicked(event):
+                    if self.is_host and self.btn_continue.is_clicked(event):
                         self.current_turn_idx = -1
                         self.start_next_turn()
 
@@ -388,20 +453,55 @@ class Game:
                 if self.btn_next_level.is_clicked(event):
                     self.current_level_idx += 1
                     self.load_level()
-                    self.state = "BATTLE"
 
             elif self.state in ["VICTORY", "GAME_OVER"]:
                 if self.btn_restart.is_clicked(event):
                     self.reset_game()
 
     def update(self):
-        if self.state == "WAITING_ROOM":
-            messages = self.client.get_messages()
-            for msg in messages:
-                if msg.get("type") == "lobby_update":
-                    self.connected_players = msg.get("players", [])
-                elif msg.get("type") == "game_start":
-                    self.state = "BATTLE"
+        messages = self.client.get_messages()
+        for msg in messages:
+            msg_type = msg.get("type")
+            
+            if msg_type == "lobby_update":
+                self.connected_players = msg.get("players", [])
+                
+            elif msg_type == "game_start":
+                self.load_level()
+                self.state = "BATTLE"
+                
+            elif msg_type == "set_turn":
+                self.apply_turn(msg.get("turn_idx"))
+                
+            elif msg_type == "action_result":
+                if msg.get("player_name") != self.player_name:
+                    self.boss_hp = msg.get("boss_hp")
+                    for p in self.team:
+                        if p["name"] == msg.get("player_name"):
+                            p["hp"] = msg.get("player_hp")
+                            
+                    self.battle_message = msg.get("message")
+                    self.verificar_fim_de_jogo()
+                    if self.state == "BATTLE":
+                        self.battle_substate = "TURN_RESULT"
+                        
+            elif msg_type == "turn_ended":
+                if self.is_host:
+                    self.start_next_turn()
+                    
+            elif msg_type == "boss_action":
+                if not self.is_host:
+                    target_name = msg.get("target_name")
+                    for p in self.team:
+                        if p["name"] == target_name:
+                            p["hp"] = msg.get("target_hp")
+                    if self.player_name == target_name:
+                        self.player_hp = msg.get("target_hp")
+                        
+                    self.battle_message = msg.get("message")
+                    self.verificar_fim_de_jogo()
+                    if self.state == "BATTLE":
+                        self.battle_substate = "BOSS_TURN"
 
     def draw_menu(self):
         if self.logo_image: self.screen.blit(self.logo_image, self.logo_rect)
@@ -475,7 +575,7 @@ class Game:
             self.screen.blit(wait_text, wait_text.get_rect(center=(WIDTH // 2, 680)))
 
     def draw_battle(self):
-        if self.bg_battle: self.screen.blit(self.bg_battle, (0, 0))
+        if self.current_bg: self.screen.blit(self.current_bg, (0, 0))
         else: self.screen.fill(BLACK)
 
         boss_rect = self.img_boss.get_rect(center=(WIDTH - 250, HEIGHT // 2 - 50))
@@ -564,16 +664,33 @@ class Game:
             self.btn_opt_d.draw(self.screen)
             
         elif self.battle_substate == "WAITING_OTHER":
-            ally_name = self.team[self.current_turn_idx]["name"]
-            info_surf = self.ui_font.render(f"Aguardando turno de {ally_name}...", True, LIGHT_GREY)
-            self.screen.blit(info_surf, (420, HEIGHT - 165))
+            if 0 <= self.current_turn_idx < len(self.team):
+                ally_name = self.team[self.current_turn_idx]["name"]
+                info_surf = self.ui_font.render(f"Aguardando turno de {ally_name}...", True, LIGHT_GREY)
+                self.screen.blit(info_surf, (420, HEIGHT - 165))
             
-        elif self.battle_substate in ["TURN_RESULT", "BOSS_TURN"]:
+        elif self.battle_substate == "TURN_RESULT":
             msg_surf = self.small_font.render(self.battle_message, True, WHITE)
             self.screen.blit(msg_surf, msg_surf.get_rect(center=(400 + 750//2, HEIGHT - 130)))
             
-            self.btn_continue.rect.center = (400 + 750//2, HEIGHT - 60)
-            self.btn_continue.draw(self.screen)
+            current_player = self.team[self.current_turn_idx]
+            if current_player["name"] == self.player_name:
+                self.btn_continue.rect.center = (400 + 750//2, HEIGHT - 60)
+                self.btn_continue.draw(self.screen)
+            else:
+                info_surf = self.small_font.render(f"Aguardando {current_player['name']} avançar...", True, LIGHT_GREY)
+                self.screen.blit(info_surf, info_surf.get_rect(center=(400 + 750//2, HEIGHT - 60)))
+                
+        elif self.battle_substate == "BOSS_TURN":
+            msg_surf = self.small_font.render(self.battle_message, True, WHITE)
+            self.screen.blit(msg_surf, msg_surf.get_rect(center=(400 + 750//2, HEIGHT - 130)))
+            
+            if self.is_host:
+                self.btn_continue.rect.center = (400 + 750//2, HEIGHT - 60)
+                self.btn_continue.draw(self.screen)
+            else:
+                info_surf = self.small_font.render(f"Aguardando o Host avançar o turno...", True, LIGHT_GREY)
+                self.screen.blit(info_surf, info_surf.get_rect(center=(400 + 750//2, HEIGHT - 60)))
 
     def draw_level_clear(self):
         self.screen.fill(BLACK)

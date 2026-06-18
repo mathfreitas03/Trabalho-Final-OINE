@@ -64,6 +64,11 @@ class GameServer:
                 elif msg_type == "disconnect":
                     connected = False
                     
+                else:
+                    # O SEGREDO ESTÁ AQUI: Roteador genérico de batalha
+                    # Se for ataque, magia, turno do boss ou mudança de turno, ele envia para todos
+                    self.broadcast(data)
+                    
             except json.JSONDecodeError:
                 pass
             except Exception as e:
