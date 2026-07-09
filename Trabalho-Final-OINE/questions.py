@@ -32,7 +32,7 @@ QUESTION_BANK = {
         {"pergunta": "A Torre de Hanói é tradicionalmente resolvida usando o conceito de:", "opcoes": ["A) Filas", "B) Matrizes", "C) Grafos", "D) Pilhas"], "correta": 3},
         {"pergunta": "Em uma pilha estática implementada com vetor, a base fica no índice:", "opcoes": ["A) N", "B) -1", "C) 0", "D) N-1"], "correta": 2},
         {"pergunta": "Qual destas NÃO é uma operação padrão de Pilha?", "opcoes": ["A) Push", "B) Pop", "C) Peek", "D) Sort (Ordenar)"], "correta": 3},
-        {"pergunta": "Qual destas variáveis é dispensável ao gerenciar uma pilha simples?", "opcoes": ["A) Tamanho", "B) Topo", "C) Fim (Rear)", "D) Array de dados"], "correta": 2},
+       # {"pergunta": "Qual destas variáveis é dispensável ao gerenciar uma pilha simples?", "opcoes": ["A) Tamanho", "B) Topo", "C) Fim (Rear)", "D) Array de dados"], "correta": 2},
         {"pergunta": "LIFO é um acrônimo para:", "opcoes": ["A) Last In, First Out", "B) List In, File Out", "C) Last Index, First Option", "D) Linear Input, Fast Output"], "correta": 0}
     ],
     

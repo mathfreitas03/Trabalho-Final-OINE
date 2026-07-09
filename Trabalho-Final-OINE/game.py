@@ -4,6 +4,7 @@ import sys
 import os
 import threading
 import random 
+import json
 
 # Importações separadas corretamente
 from pygame_settings import WIDTH, HEIGHT, FPS, TITLE, DARK_GREY, WHITE, BLUE, HOVER_BLUE, BLACK, LIGHT_GREY
@@ -24,7 +25,15 @@ class Game:
         pygame.display.set_caption(TITLE)
         self.clock = pygame.time.Clock()
         self.running = True
-        
+
+        self.classe_disponivel = {
+            "knight": True,
+            "wizard": True,
+            "rogue": True,
+            "healer": True,
+            "bard": True
+        }
+
         # --- ESTADOS E DADOS DO JOGADOR ---
         self.state = "MENU"
         self.player_name = ""
@@ -302,7 +311,10 @@ class Game:
             if self.current_level_idx < len(self.levels) - 1:
                 self.state = "LEVEL_CLEAR"
             else:
-                self.state = "VICTORY"
+                # Evita enviar duplicado se já estiver no estado de Vitória
+                if self.state != "VICTORY":
+                    self.state = "VICTORY"
+                    self.notificar_fim_de_jogo_ao_servidor()
         else:
             if len(self.team) > 0:
                 todos_mortos = True
@@ -312,7 +324,21 @@ class Game:
                         break
                 
                 if todos_mortos:
-                    self.state = "GAME_OVER"
+                    # Evita enviar duplicado se já estiver no estado de Game Over
+                    if self.state != "GAME_OVER":
+                        self.state = "GAME_OVER"
+                        self.notificar_fim_de_jogo_ao_servidor()
+
+    def notificar_fim_de_jogo_ao_servidor(self):
+        """Envia o comando de encerramento para o servidor disparar a telemetria."""
+        try:
+            # Passe APENAS o dicionário puro. O send_data cuida do resto!
+            self.client.send_data({
+                "type": "game_over"
+            })
+            print("[REDE] Evento de fim de jogo enviado ao servidor com sucesso.")
+        except Exception as e:
+            print(f"[REDE ERRO] Falha ao notificar fim de jogo: {e}")
 
     def execute_player_action(self):
         dano = 0
@@ -374,7 +400,7 @@ class Game:
                 self.boss_hp -= dano
 
         self.battle_message = msg_base
-
+        
         self.client.send_data({
             "type": "action_result",
             "team": self.team,
@@ -389,10 +415,22 @@ class Game:
     def processar_resposta(self, opcao_escolhida):
         if self.active_question:
             correta = self.active_question["correta"]
-            
+            topico_atual = self.active_question.get("topico", "Geral")
+
             if opcao_escolhida == correta:
+                self.client.send_data({
+                    "type": "submit_answer",
+                    "correct": True,
+                    "topic": topico_atual
+                })
+
                 self.execute_player_action()
             else:
+                self.client.send_data({
+                    "type": "submit_answer",
+                    "correct": False,
+                    "topic": topico_atual
+                })
                 dano_sofrido = 25
                 self.player_hp -= dano_sofrido
                 for p in self.team:
@@ -575,7 +613,7 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            
+
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self.running = False
 
@@ -583,38 +621,76 @@ class Game:
                 if self.btn_host.is_clicked(event):
                     self.is_host = True
                     self.state = "LOBBY"
+
                 if self.btn_join.is_clicked(event):
                     self.is_host = False
                     self.state = "LOBBY"
 
             elif self.state == "LOBBY":
                 self.input_name.handle_event(event)
-                
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.rect_knight.collidepoint(event.pos): self.player_class = "Knight"
-                    elif self.rect_wizard.collidepoint(event.pos): self.player_class = "Wizard"
-                    elif self.rect_rogue.collidepoint(event.pos): self.player_class = "Rogue"
-                    elif self.rect_healer.collidepoint(event.pos): self.player_class = "Healer"
-                    elif self.rect_bard.collidepoint(event.pos): self.player_class = "Bard"
-                    
+
                 if self.btn_start.is_clicked(event):
                     self.player_name = self.input_name.text.strip()
-                    if self.player_name != "" and self.player_class is not None:
+
+                    if self.player_name != "":
+
                         if self.is_host:
                             self.server = GameServer()
                             server_thread = threading.Thread(target=self.server.start)
-                            server_thread.daemon = True 
+                            server_thread.daemon = True
                             server_thread.start()
 
                         if self.client.connect(SERVER_IP):
-                            self.client.send_data({"type": "join", "name": self.player_name, "class": self.player_class})
+                            self.client.send_data({
+                                "type": "join",
+                                "name": self.player_name
+                            })
+
                             self.state = "WAITING_ROOM"
+
                     else:
-                        print("[AVISO] Preencha seu nome e selecione uma classe!")
+                        print("[AVISO] Digite seu nome!")
 
             elif self.state == "WAITING_ROOM":
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+
+                    if self.rect_knight.collidepoint(event.pos):
+                        self.client.send_data({
+                            "type": "select_class",
+                            "class": "Knight"
+                        })
+
+                    elif self.rect_wizard.collidepoint(event.pos):
+                        self.client.send_data({
+                            "type": "select_class",
+                            "class": "Wizard"
+                        })
+
+                    elif self.rect_rogue.collidepoint(event.pos):
+                        self.client.send_data({
+                            "type": "select_class",
+                            "class": "Rogue"
+                        })
+
+                    elif self.rect_healer.collidepoint(event.pos):
+                        self.client.send_data({
+                            "type": "select_class",
+                            "class": "Healer"
+                        })
+
+                    elif self.rect_bard.collidepoint(event.pos):
+                        self.client.send_data({
+                            "type": "select_class",
+                            "class": "Bard"
+                        })
+
                 if self.is_host and self.btn_start_game.is_clicked(event):
-                    self.client.send_data({"type": "start_game"})
+
+                    if all(player["class"] is not None for player in self.connected_players):
+                        self.client.send_data({"type": "start_game"})
+                    else:
+                        print("[AVISO] Ainda existem jogadores sem classe.")
 
             elif self.state == "BATTLE":
                 if self.battle_substate == "ACTION_SELECT":
@@ -669,7 +745,12 @@ class Game:
             
             if msg_type == "lobby_update":
                 self.connected_players = msg.get("players", [])
+                self.classe_disponivel = msg.get("available_classes", self.classe_disponivel)
                 
+                for player in self.connected_players:
+                    if player["name"] == self.player_name:
+                        self.player_class = player["class"]
+                        break
             elif msg_type == "game_start":
                 self.load_level()
                 self.state = "BATTLE"
@@ -719,79 +800,258 @@ class Game:
         self.btn_host.draw(self.screen)
         self.btn_join.draw(self.screen)
 
+    # def draw_lobby(self):
+    #     if self.bg_lobby: self.screen.blit(self.bg_lobby, (0, 0))
+    #     else: self.screen.fill(DARK_GREY)
+        
+    #     title_surf = self.ui_font.render("Configuração de Personagem", True, WHITE)
+    #     self.screen.blit(title_surf, title_surf.get_rect(center=(WIDTH // 2, 80)))
+    #     name_label = self.ui_font.render("Seu Nome:", True, WHITE)
+    #     self.screen.blit(name_label, (WIDTH // 2 - 150, 120))
+        
+    #     self.input_name.draw(self.screen)
+        
+    #     self.screen.blit(self.img_knight, self.rect_knight.topleft)
+    #     self.screen.blit(self.img_wizard, self.rect_wizard.topleft)
+    #     self.screen.blit(self.img_rogue, self.rect_rogue.topleft)
+    #     self.screen.blit(self.img_healer, self.rect_healer.topleft)
+    #     self.screen.blit(self.img_bard, self.rect_bard.topleft)
+
+    #     classes_info = [
+    #         ("Knight", self.rect_knight),
+    #         ("Wizard", self.rect_wizard),
+    #         ("Rogue", self.rect_rogue),
+    #         ("Healer", self.rect_healer),
+    #         ("Bard", self.rect_bard)
+    #     ]
+        
+    #     for class_name, rect in classes_info:
+    #         label_surf = self.small_font.render(class_name, True, WHITE)
+    #         label_rect = label_surf.get_rect(center=(rect.centerx, rect.top - 20))
+    #         self.screen.blit(label_surf, label_rect)
+
+    #     if self.player_class == "Knight": self.draw_outline(self.img_knight, self.rect_knight, WHITE, 4)
+    #     elif self.player_class == "Wizard": self.draw_outline(self.img_wizard, self.rect_wizard, WHITE, 4)
+    #     elif self.player_class == "Rogue": self.draw_outline(self.img_rogue, self.rect_rogue, WHITE, 4)
+    #     elif self.player_class == "Healer": self.draw_outline(self.img_healer, self.rect_healer, WHITE, 4)
+    #     elif self.player_class == "Bard": self.draw_outline(self.img_bard, self.rect_bard, WHITE, 4)
+        
+    #     if self.player_class:
+    #         desc_text = self.class_info[self.player_class]["desc"]
+    #         skill_text = self.class_info[self.player_class]["skill"]
+            
+    #         desc_surf = self.small_font.render(desc_text, True, WHITE)
+    #         skill_surf = self.small_font.render(skill_text, True, (100, 255, 100))
+            
+    #         self.screen.blit(desc_surf, desc_surf.get_rect(center=(WIDTH // 2, self.portrait_y + 110)))
+    #         self.screen.blit(skill_surf, skill_surf.get_rect(center=(WIDTH // 2, self.portrait_y + 140)))
+
+    #     self.btn_start.draw(self.screen)
+
     def draw_lobby(self):
-        if self.bg_lobby: self.screen.blit(self.bg_lobby, (0, 0))
-        else: self.screen.fill(DARK_GREY)
-        
-        title_surf = self.ui_font.render("Configuração de Personagem", True, WHITE)
-        self.screen.blit(title_surf, title_surf.get_rect(center=(WIDTH // 2, 80)))
-        name_label = self.ui_font.render("Seu Nome:", True, WHITE)
-        self.screen.blit(name_label, (WIDTH // 2 - 150, 120))
-        
-        self.input_name.draw(self.screen)
-        
-        self.screen.blit(self.img_knight, self.rect_knight.topleft)
-        self.screen.blit(self.img_wizard, self.rect_wizard.topleft)
-        self.screen.blit(self.img_rogue, self.rect_rogue.topleft)
-        self.screen.blit(self.img_healer, self.rect_healer.topleft)
-        self.screen.blit(self.img_bard, self.rect_bard.topleft)
+        if self.bg_lobby:
+            self.screen.blit(self.bg_lobby, (0, 0))
+        else:
+            self.screen.fill(DARK_GREY)
 
-        classes_info = [
-            ("Knight", self.rect_knight),
-            ("Wizard", self.rect_wizard),
-            ("Rogue", self.rect_rogue),
-            ("Healer", self.rect_healer),
-            ("Bard", self.rect_bard)
-        ]
-        
-        for class_name, rect in classes_info:
-            label_surf = self.small_font.render(class_name, True, WHITE)
-            label_rect = label_surf.get_rect(center=(rect.centerx, rect.top - 20))
-            self.screen.blit(label_surf, label_rect)
-
-        if self.player_class == "Knight": self.draw_outline(self.img_knight, self.rect_knight, WHITE, 4)
-        elif self.player_class == "Wizard": self.draw_outline(self.img_wizard, self.rect_wizard, WHITE, 4)
-        elif self.player_class == "Rogue": self.draw_outline(self.img_rogue, self.rect_rogue, WHITE, 4)
-        elif self.player_class == "Healer": self.draw_outline(self.img_healer, self.rect_healer, WHITE, 4)
-        elif self.player_class == "Bard": self.draw_outline(self.img_bard, self.rect_bard, WHITE, 4)
-        
-        if self.player_class:
-            desc_text = self.class_info[self.player_class]["desc"]
-            skill_text = self.class_info[self.player_class]["skill"]
-            
-            desc_surf = self.small_font.render(desc_text, True, WHITE)
-            skill_surf = self.small_font.render(skill_text, True, (100, 255, 100))
-            
-            self.screen.blit(desc_surf, desc_surf.get_rect(center=(WIDTH // 2, self.portrait_y + 110)))
-            self.screen.blit(skill_surf, skill_surf.get_rect(center=(WIDTH // 2, self.portrait_y + 140)))
-
-        self.btn_start.draw(self.screen)
-
-    def draw_waiting_room(self):
-        if self.bg_lobby: self.screen.blit(self.bg_lobby, (0, 0))
-        else: self.screen.fill(DARK_GREY)
-
-        title = self.title_font.render("SALA DE ESPERA", True, WHITE)
+        title = self.title_font.render("ENTRAR NA SALA", True, WHITE)
         self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 100)))
 
-        list_bg = pygame.Surface((600, 400))
-        list_bg.set_alpha(180) 
-        list_bg.fill(BLACK)
-        self.screen.blit(list_bg, (WIDTH // 2 - 300, 200))
+        label = self.ui_font.render("Seu Nome:", True, WHITE)
+        self.screen.blit(label, (WIDTH // 2 - 150, 180))
 
-        header = self.ui_font.render(f"Jogadores Conectados: {len(self.connected_players)}/4", True, BLUE)
-        self.screen.blit(header, header.get_rect(center=(WIDTH // 2, 230)))
+        self.input_name.draw(self.screen)
 
-        start_y = 300
-        for i, player in enumerate(self.connected_players):
-            p_text = self.ui_font.render(f"> {player['name']}  ({player['class']})", True, WHITE)
-            self.screen.blit(p_text, (WIDTH // 2 - 250, start_y + (i * 45)))
+        info = self.small_font.render(
+            "Após conectar você poderá escolher sua classe.",
+            True,
+            LIGHT_GREY
+        )
+        self.screen.blit(info, info.get_rect(center=(WIDTH // 2, 280)))
 
-        if self.is_host: self.btn_start_game.draw(self.screen)
+        self.btn_start.draw(self.screen)
+    # def draw_waiting_room(self):
+    #     if self.bg_lobby: self.screen.blit(self.bg_lobby, (0, 0))
+    #     else: self.screen.fill(DARK_GREY)
+
+    #     title = self.title_font.render("SALA DE ESPERA", True, WHITE)
+    #     self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 100)))
+
+    #     list_bg = pygame.Surface((600, 400))
+    #     list_bg.set_alpha(180) 
+    #     list_bg.fill(BLACK)
+    #     self.screen.blit(list_bg, (WIDTH // 2 - 300, 200))
+
+    #     header = self.ui_font.render(f"Jogadores Conectados: {len(self.connected_players)}/4", True, BLUE)
+    #     self.screen.blit(header, header.get_rect(center=(WIDTH // 2, 230)))
+
+    #     start_y = 300
+    #     for i, player in enumerate(self.connected_players):
+    #         p_text = self.ui_font.render(f"> {player['name']}  ({player['class']})", True, WHITE)
+    #         self.screen.blit(p_text, (WIDTH // 2 - 250, start_y + (i * 45)))
+
+    #     if self.is_host: self.btn_start_game.draw(self.screen)
+    #     else:
+    #         wait_text = self.ui_font.render("Aguardando o Host iniciar a batalha...", True, LIGHT_GREY)
+    #         self.screen.blit(wait_text, wait_text.get_rect(center=(WIDTH // 2, 680)))
+    def draw_waiting_room(self):
+
+        if self.bg_lobby:
+            self.screen.blit(self.bg_lobby, (0, 0))
         else:
-            wait_text = self.ui_font.render("Aguardando o Host iniciar a batalha...", True, LIGHT_GREY)
-            self.screen.blit(wait_text, wait_text.get_rect(center=(WIDTH // 2, 680)))
+            self.screen.fill(DARK_GREY)
 
+        title = self.title_font.render("SALA DE ESPERA", True, WHITE)
+        self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 60)))
+
+        #
+        # Lista de jogadores
+        #
+
+        pygame.draw.rect(self.screen, BLACK, (40, 120, 350, 520))
+        pygame.draw.rect(self.screen, BLUE, (40, 120, 350, 520), 3)
+
+        txt = self.ui_font.render("Jogadores", True, WHITE)
+        self.screen.blit(txt, (60, 140))    
+
+        y = 190
+
+        for player in self.connected_players:
+
+            classe = player["class"] if player["class"] else "Escolhendo..."
+
+            surf = self.small_font.render(
+                f"{player['name']} - {classe}",
+                True,
+                WHITE
+            )
+
+            self.screen.blit(surf, (60, y))
+            y += 40
+
+        #
+        # Retratos
+        #
+
+        portraits = [
+            ("Knight", self.img_knight, self.rect_knight),
+            ("Wizard", self.img_wizard, self.rect_wizard),
+            ("Rogue", self.img_rogue, self.rect_rogue),
+            ("Healer", self.img_healer, self.rect_healer),
+            ("Bard", self.img_bard, self.rect_bard)
+        ]
+
+        for name, img, rect in portraits:
+
+            self.screen.blit(img, rect)
+
+            #
+            # Nome
+            #
+
+            label = self.small_font.render(name, True, WHITE)
+            self.screen.blit(
+                label,
+                label.get_rect(center=(rect.centerx, rect.top - 20))
+            )
+
+            # Classe indisponivel
+
+            if not self.classe_disponivel[name.lower()]:
+                dark_img = img.copy()
+                dark_img.set_alpha(50)      # 255 = normal, 80 = bem escuro
+                self.screen.blit(dark_img, rect)
+
+            if self.player_class == name:
+                self.draw_outline(img, rect, WHITE, 4)
+
+
+        if self.player_class:
+
+            info = self.class_info[self.player_class]
+
+            desc = self.small_font.render(
+                info["desc"],
+                True,
+                WHITE
+            )
+
+            skill = self.small_font.render(
+                info["skill"],
+                True,
+                (100,255,100)
+            )
+
+            self.screen.blit(
+                desc,
+                desc.get_rect(center=(WIDTH//2 + 180, 610))
+            )
+
+            self.screen.blit(
+                skill,
+                skill.get_rect(center=(WIDTH//2 + 180, 640))
+            )
+
+        else:
+
+            aviso = self.small_font.render(
+                "Clique em uma classe para escolhê-la.",
+                True,
+                LIGHT_GREY
+            )
+
+            self.screen.blit(
+                aviso,
+                aviso.get_rect(center=(WIDTH//2 + 180, 620))
+            )
+
+        #
+        # Botão do host
+        #
+
+        if self.is_host:
+
+            todos_prontos = (
+                len(self.connected_players) > 0 and
+                all(p["class"] is not None for p in self.connected_players)
+            )
+
+            if todos_prontos:
+
+                self.btn_start_game.draw(self.screen)
+
+            else:
+
+                pygame.draw.rect(
+                    self.screen,
+                    (90,90,90),
+                    self.btn_start_game.rect,
+                    border_radius=6
+                )
+
+                txt = self.small_font.render(
+                    "Aguardando todos escolherem",
+                    True,
+                    WHITE
+                )
+
+                self.screen.blit(
+                    txt,
+                    txt.get_rect(center=self.btn_start_game.rect.center)
+                )
+
+        else:
+
+            txt = self.small_font.render(
+                "Aguardando o Host iniciar a batalha...",
+                True,
+                LIGHT_GREY
+            )
+
+            self.screen.blit(
+                txt,
+                txt.get_rect(center=(WIDTH//2,690))
+            )
     def draw_battle(self):
         if self.current_bg: self.screen.blit(self.current_bg, (0, 0))
         else: self.screen.fill(BLACK)

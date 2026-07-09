@@ -51,8 +51,15 @@ class GameClient:
     def send_data(self, data: dict):
         if self.connected:
             try:
+                # Se houver algum dado em bytes, esse print vai te mostrar a estrutura antes de dar o erro
+                # print(f"[DEBUG REDE] Enviando: {data}") 
+                
                 msg_json = json.dumps(data)
                 self.client.send(msg_json.encode(FORMAT))
+            except TypeError as te:
+                print(f"\n[ERRO DE SERIALIZAÇÃO] Você tentou enviar dados inválidos para o JSON!")
+                print(f"Conteúdo do dicionário recebido: {data}")
+                print(f"Detalhe do erro: {te}\n")
             except Exception as e:
                 print(f"[ERRO CLIENTE] Falha ao enviar: {e}")
 
